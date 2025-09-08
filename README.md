@@ -25,13 +25,20 @@ Backend: Python, Flask, Celery, PuLP (Optimization), SQLite
 Frontend: HTML, Tailwind CSS, Chart.js, JavaScript (Fetch API)
 
 4. Project Structure
-.
+
+
 ├── .gitignore          # Specifies intentionally untracked files to ignore
+
 ├── README.md           # This file: Project overview and setup instructions
+
 ├── api.py              # Flask server: Handles API requests and serves the frontend
+
 ├── celery_worker.py    # Celery worker: Runs optimization tasks in the background
+
 ├── index.html          # Frontend: The user interface for the application
+
 ├── optimization_core.py# The core mathematical optimization model logic
+
 └── requirements.txt    # Lists all necessary Python libraries for the project
 
 5. Setup and Execution
