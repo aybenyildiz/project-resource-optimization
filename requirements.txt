@@ -1,0 +1,8 @@
+celery==5.4.0
+Flask==2.3.3
+pulp==2.9.0
+requests==2.32.3
+SQLAlchemy==2.0.31
+Werkzeug==2.3.8
+flask-cors==4.0.1
+
