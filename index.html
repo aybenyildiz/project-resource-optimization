@@ -27,6 +27,11 @@
         input::-webkit-outer-spin-button,
         input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
         input[type=number] { -moz-appearance: textfield; }
+        /* Style for the drag-over effect */
+        #drop-zone.drag-over {
+            border-color: #3b82f6; /* blue-500 */
+            background-color: #eff6ff; /* blue-50 */
+        }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 p-4 sm:p-8">
@@ -34,9 +39,12 @@
     <div class="max-w-screen-2xl mx-auto bg-white rounded-xl shadow-lg p-6 sm:p-8">
         <div class="flex flex-wrap items-center justify-between gap-4 mb-6 border-b pb-4">
             <h1 class="text-2xl sm:text-3xl font-bold text-gray-900">Project Resource Optimization Tool</h1>
-            <div class="flex items-center space-x-2">
-                 <div id="status-light" class="w-4 h-4 rounded-full bg-red-500 transition-colors" title="API Connection Status"></div>
-                 <span id="status-text" class="text-sm text-gray-500">Checking API Connection...</span>
+            <div class="flex items-center space-x-4">
+                 <!-- API Status -->
+                 <div class="flex items-center space-x-2">
+                    <div id="status-light" class="w-4 h-4 rounded-full bg-red-500 transition-colors" title="API Connection Status"></div>
+                    <span id="status-text" class="text-sm text-gray-500">Checking API...</span>
+                 </div>
             </div>
         </div>
 
@@ -58,7 +66,7 @@
                             <tbody id="activities-table-body"></tbody>
                         </table>
                     </div>
-                    <button id="add-activity-btn" class="mt-4 w-full bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600 transition-colors text-sm flex items-center justify-center"><i class="fas fa-plus mr-2"></i>Add New Activity</button>
+                    <button id="add-activity-btn" class="mt-4 w-full bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors text-sm flex items-center justify-center"><i class="fas fa-plus mr-2"></i>Add New Activity</button>
                 </div>
 
                 <div id="tab-precedences" class="tab-content">
@@ -73,7 +81,7 @@
                                 <select id="successor-select" class="mt-1"></select>
                             </div>
                         </div>
-                        <button id="add-precedence-btn" class="w-full bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors text-sm"><i class="fas fa-plus mr-2"></i>Add Precedence</button>
+                        <button id="add-precedence-btn" class="w-full bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors text-sm"><i class="fas fa-link mr-2"></i>Add Precedence</button>
                     </div>
                     <div class="mt-4 overflow-auto max-h-[400px] border rounded-lg">
                         <table class="min-w-full text-sm">
@@ -95,7 +103,24 @@
                     <div><label for="cost_per_day" class="block text-sm font-medium text-gray-700">Daily Activity Cost</label><input type="number" id="cost_per_day" value="0.1" step="0.1" class="mt-1"></div>
                 </div>
 
-                <button id="optimizeButton" class="mt-6 w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-300 transition-transform transform hover:scale-105 active:scale-95 flex items-center justify-center"><i class="fas fa-cogs mr-2"></i>Start Optimization</button>
+                <button id="optimizeButton" class="mt-6 w-full bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 transition-transform transform hover:scale-105 active:scale-95 flex items-center justify-center"><i class="fas fa-cogs mr-2"></i>Start Optimization</button>
+                
+                <!-- Drag and Drop Zone -->
+                <div class="mt-6">
+                    <div class="relative flex py-2 items-center">
+                        <div class="flex-grow border-t border-gray-300"></div>
+                        <span class="flex-shrink mx-4 text-gray-400 text-xs uppercase">Or Import Data</span>
+                        <div class="flex-grow border-t border-gray-300"></div>
+                    </div>
+                    <div id="drop-zone" class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-blue-500 hover:bg-gray-50 transition-colors mt-2">
+                        <div class="flex flex-col items-center justify-center text-gray-500">
+                            <i class="fas fa-file-excel fa-3x mb-3 text-green-500"></i>
+                            <span class="font-semibold">Drag & Drop Excel File Here</span>
+                            <span class="text-xs mt-1">or click to select file</span>
+                        </div>
+                    </div>
+                    <input type="file" id="excel-file-input" class="hidden" accept=".xlsx, .xls">
+                </div>
             </div>
 
             <div class="lg:col-span-4">
@@ -112,6 +137,7 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            // Element Definitions
             const activitiesTableBody = document.getElementById('activities-table-body');
             const resourcesTableBody = document.getElementById('resources-table-body');
             const precedencesTableBody = document.getElementById('precedences-table-body');
@@ -134,225 +160,116 @@
             const modalBody = document.getElementById('modal-body');
             const modalCancelBtn = document.getElementById('modal-cancel-btn');
             const modalSaveBtn = document.getElementById('modal-save-btn');
+            const dropZone = document.getElementById('drop-zone');
+            const excelFileInput = document.getElementById('excel-file-input');
             const API_BASE_URL = 'http://127.0.0.1:5000';
             let ganttChartInstance = null;
             let resourceChartInstance = null;
             let currentEditingRow = null;
 
-            const checkApiStatus = async () => { try { await fetch(`${API_BASE_URL}/api/health`); statusLight.classList.replace('bg-red-500', 'bg-green-500'); statusText.textContent = 'API Connection Active'; } catch (error) { statusLight.classList.replace('bg-green-500', 'bg-red-500'); statusText.textContent = 'API Connection Lost'; } };
+            // API Health Check
+            const checkApiStatus = async () => { try { await fetch(`${API_BASE_URL}/api/health`); statusLight.classList.replace('bg-red-500', 'bg-green-500'); statusText.textContent = 'API Active'; } catch (error) { statusLight.classList.replace('bg-green-500', 'bg-red-500'); statusText.textContent = 'API Inactive'; } };
             checkApiStatus(); setInterval(checkApiStatus, 10000);
 
-            const sample_data = { "projects": ["J1", "J2", "J3", "J4"], "activities": {"J1": ["A11", "A12", "A13"], "J2": ["A21", "A22"], "J3": ["A31", "A32", "A33"], "J4": ["A41", "A42"]}, "resources": ["R1", "R2"], "precedences": {"J1": [["A11", "A12"]], "J2": [["A21", "A22"]], "J3": [["A31", "A32"]], "J4": [["A41", "A42"]]}, "resource_requirements": {"A11,J1,R1": 2, "A11,J1,R2": 1, "A12,J1,R1": 1, "A12,J1,R2": 3, "A13,J1,R1": 3, "A13,J1,R2": 2, "A21,J2,R1": 4, "A21,J2,R2": 2, "A22,J2,R1": 2, "A22,J2,R2": 4, "A31,J3,R1": 3, "A31,J3,R2": 1, "A32,J3,R1": 2, "A32,J3,R2": 3, "A33,J3,R1": 1, "A33,J3,R2": 2, "A41,J4,R1": 2, "A41,J4,R2": 1, "A42,J4,R1": 3, "A42,J4,R2": 2}, "resource_weights": {"R1": 0.6, "R2": 0.4}, "earliest_start_times": {"J1": 1, "J2": 1, "J3": 1, "J4": 1}, "project_deadlines": {"J1": 20, "J2": 20, "J3": 20, "J4": 20}, "time_periods": 10, "max_resource_capacity": {"R1": 12, "R2": 15}, "target_finish_times": {"A11,J1": 3, "A12,J1": 6, "A13,J1": 7, "A21,J2": 5, "A22,J2": 5, "A31,J3": 4, "A32,J3": 8, "A33,J3": 10, "A41,J4": 5, "A42,J4": 9}, "lateness_penalties": {"A11,J1": 10, "A12,J1": 1000, "A13,J1": 2, "A21,J2": 8, "A22,J2": 5000, "A31,J3": 5, "A32,J3": 50, "A33,J3": 10, "A41,J4": 15, "A42,J4": 750}, "min_durations": {"A11,J1": 2, "A12,J1": 3, "A13,J1": 1, "A21,J2": 3, "A22,J2": 2, "A31,J3": 2, "A32,J3": 3, "A33,J3": 1, "A41,J4": 2, "A42,J4": 3}, "max_durations": {"A11,J1": 5, "A12,J1": 6, "A13,J1": 3, "A21,J2": 7, "A22,J2": 4, "A31,J3": 4, "A32,J3": 5, "A33,J3": 2, "A41,J4": 4, "A42,J4": 5}, "cost_per_day": 0.1 };
+            // Initial Sample Data
+            const sample_data = { "projects": ["J1", "J2", "J3", "J4"], "activities": {"J1": ["A11", "A12", "A13"], "J2": ["A21", "A22"], "J3": ["A31", "A32", "A33"], "J4": ["A41", "A42"]}, "resources": ["K1", "K2"], "precedences": {"J1": [["A11", "A12"]], "J2": [["A21", "A22"]], "J3": [["A31", "A32"]], "J4": [["A41", "A42"]]}, "resource_requirements": {"A11,J1,K1": 2, "A11,J1,K2": 1, "A12,J1,K1": 1, "A12,J1,K2": 3, "A13,J1,K1": 3, "A13,J1,K2": 2, "A21,J2,K1": 4, "A21,J2,K2": 2, "A22,J2,K1": 2, "A22,J2,K2": 4, "A31,J3,K1": 3, "A31,J3,K2": 1, "A32,J3,K1": 2, "A32,J3,K2": 3, "A33,J3,K1": 1, "A33,J3,K2": 2, "A41,J4,K1": 2, "A41,J4,K2": 1, "A42,J4,K1": 3, "A42,J4,K2": 2}, "resource_weights": {"K1": 0.6, "K2": 0.4}, "earliest_start_times": {"J1": 1, "J2": 1, "J3": 1, "J4": 1}, "project_deadlines": {"J1": 20, "J2": 20, "J3": 20, "J4": 20}, "time_periods": 10, "max_resource_capacity": {"K1": 12, "K2": 15}, "target_finish_times": {"A11,J1": 3, "A12,J1": 6, "A13,J1": 7, "A21,J2": 5, "A22,J2": 5, "A31,J3": 4, "A32,J3": 8, "A33,J3": 10, "A41,J4": 5, "A42,J4": 9}, "lateness_penalties": {"A11,J1": 10, "A12,J1": 1000, "A13,J1": 2, "A21,J2": 8, "A22,J2": 5000, "A31,J3": 5, "A32,J3": 50, "A33,J3": 10, "A41,J4": 15, "A42,J4": 750}, "min_durations": {"A11,J1": 2, "A12,J1": 3, "A13,J1": 1, "A21,J2": 3, "A22,J2": 2, "A31,J3": 2, "A32,J3": 3, "A33,J3": 1, "A41,J4": 2, "A42,J4": 3}, "max_durations": {"A11,J1": 5, "A12,J1": 6, "A13,J1": 3, "A21,J2": 7, "A22,J2": 4, "A31,J3": 4, "A32,J3": 5, "A33,J3": 2, "A41,J4": 4, "A42,J4": 5}, "cost_per_day": 0.1 };
             
             function populateForms(data) {
+                activitiesTableBody.innerHTML = ''; resourcesTableBody.innerHTML = ''; precedencesTableBody.innerHTML = '';
                 document.getElementById('time_periods').value = data.time_periods;
                 document.getElementById('cost_per_day').value = data.cost_per_day;
-                resourcesTableBody.innerHTML = '';
-                data.resources.forEach(resName => addResourceRow(resName, data.max_resource_capacity[resName] || 0, data.resource_weights[resName] || 0));
-                activitiesTableBody.innerHTML = '';
-                for (const projName in data.activities) {
-                    data.activities[projName].forEach(actName => {
-                        const key = `${actName},${projName}`;
-                        const reqs = Object.fromEntries(data.resources.map(res => [res, data.resource_requirements[`${key},${res}`] || 0]));
-                        addActivityRow(projName, actName, data.min_durations[key], data.max_durations[key], data.target_finish_times[key], data.lateness_penalties[key], reqs);
-                    });
-                }
+                const resourceReqsForActivities = {};
+                data.resources.forEach(resName => { addResourceRow(resName, data.max_resource_capacity[resName] || 0, data.resource_weights[resName] || 0); resourceReqsForActivities[resName] = 0; });
+                for (const projName in data.activities) { data.activities[projName].forEach(actName => { const key = `${actName},${projName}`; const reqs = {}; for (const res of data.resources) { reqs[res] = data.resource_requirements[`${key},${res}`] || 0; } addActivityRow(projName, actName, data.min_durations[key], data.max_durations[key], data.target_finish_times[key], data.lateness_penalties[key], reqs); }); }
                 updatePrecedenceDropdowns();
-                precedencesTableBody.innerHTML = '';
-                for (const proj in data.precedences) {
-                    data.precedences[proj].forEach(([pred, succ]) => {
-                        addPrecedenceRow(`${pred},${proj}`, `${succ},${proj}`);
-                    });
-                }
+                for (const proj in data.precedences) { data.precedences[proj].forEach(([pred, succ]) => { addPrecedenceRow(`${pred},${proj}`, `${succ},${proj}`); }); }
             }
 
-            function addResourceRow(name = '', capacity = 10, weight = 0.5) { 
-                const row = document.createElement('tr'); 
-                row.innerHTML = `<td><input type="text" class="res-name" value="${name}"></td><td><input type="number" class="res-capacity" value="${capacity}" min="0"></td><td><input type="number" class="res-weight" value="${weight}" step="0.1" min="0" max="1"></td><td><button class="text-red-500 hover:text-red-700 remove-btn"><i class="fas fa-trash-alt"></i></button></td>`; 
-                resourcesTableBody.appendChild(row); 
-                row.querySelector('.remove-btn').addEventListener('click', () => row.remove()); 
-            }
+            // Functions to add rows to tables
+            function addResourceRow(name = '', capacity = 10, weight = 0.5) { const row = document.createElement('tr'); row.innerHTML = `<td><input type="text" class="res-name" value="${name}"></td><td><input type="number" class="res-capacity" value="${capacity}" min="0"></td><td><input type="number" class="res-weight" value="${weight}" step="0.1" min="0" max="1"></td><td><button class="text-red-500 hover:text-red-700 remove-btn"><i class="fas fa-trash-alt"></i></button></td>`; resourcesTableBody.appendChild(row); row.querySelector('.remove-btn').addEventListener('click', () => row.remove()); }
+            function addActivityRow(proj = 'J1', act = 'A_New', min = 1, max = 5, target = 10, penalty = 10, reqs = {}) { const row = document.createElement('tr'); row.dataset.resourceReqs = JSON.stringify(reqs); row.innerHTML = `<td><input type="text" class="act-proj" value="${proj}"></td><td><input type="text" class="act-name" value="${act}"></td><td><div class="flex items-center space-x-1"><input type="number" class="act-min-dur w-12" value="${min}" min="1" title="Min Duration"><span>-</span><input type="number" class="act-max-dur w-12" value="${max}" min="1" title="Max Duration"></div></td><td><input type="number" class="act-target-finish w-20" value="${target}" min="1"></td><td><input type="number" class="act-penalty w-20" value="${penalty}" min="0"></td><td><button class="text-blue-500 hover:text-blue-700 edit-res-btn"><i class="fas fa-sliders-h"></i></button></td><td><button class="text-red-500 hover:text-red-700 remove-btn"><i class="fas fa-trash-alt"></i></button></td>`; activitiesTableBody.appendChild(row); row.querySelector('.remove-btn').addEventListener('click', () => { row.remove(); updatePrecedenceDropdowns(); }); row.querySelector('.edit-res-btn').addEventListener('click', () => openResourceModal(row)); }
+            function addPrecedenceRow(predVal, succVal) { const existing = Array.from(precedencesTableBody.querySelectorAll('tr')).some(r => r.dataset.pred === predVal && r.dataset.succ === succVal); if (existing) return; const predOption = predecessorSelect.querySelector(`[value="${predVal}"]`); const succOption = successorSelect.querySelector(`[value="${succVal}"]`); if (!predOption || !succOption) return; const predText = predOption.textContent; const succText = succOption.textContent; const row = document.createElement('tr'); row.dataset.pred = predVal; row.dataset.succ = succVal; row.innerHTML = `<td>${predText}</td><td>${succText}</td><td><button class="text-red-500 hover:text-red-700 remove-btn"><i class="fas fa-trash-alt"></i></button></td>`; precedencesTableBody.appendChild(row); row.querySelector('.remove-btn').addEventListener('click', () => row.remove()); }
+            function updatePrecedenceDropdowns() { const options = Array.from(activitiesTableBody.querySelectorAll('tr')).map(row => { const projInput = row.querySelector('.act-proj'); const actInput = row.querySelector('.act-name'); if (!projInput || !actInput) return null; const proj = projInput.value; const act = actInput.value; if (!proj || !act) return null; const val = `${act},${proj}`; const text = `${act} (${proj})`; return `<option value="${val}">${text}</option>`; }).filter(Boolean).join(''); predecessorSelect.innerHTML = options; successorSelect.innerHTML = options; }
 
-            function addActivityRow(proj = 'J1', act = 'A_New', min = 1, max = 5, target = 10, penalty = 10, reqs = {}) {
-                const row = document.createElement('tr');
-                row.dataset.resourceReqs = JSON.stringify(reqs);
-                row.innerHTML = `<td><input type="text" class="act-proj" value="${proj}"></td><td><input type="text" class="act-name" value="${act}"></td><td><div class="flex items-center space-x-1"><input type="number" class="act-min-dur w-12" value="${min}" min="1" title="Min Duration"><span>-</span><input type="number" class="act-max-dur w-12" value="${max}" min="1" title="Max Duration"></div></td><td><input type="number" class="act-target-finish w-20" value="${target}" min="1"></td><td><input type="number" class="act-penalty w-20" value="${penalty}" min="0"></td><td><button class="text-blue-500 hover:text-blue-700 edit-res-btn"><i class="fas fa-sliders-h"></i></button></td><td><button class="text-red-500 hover:text-red-700 remove-btn"><i class="fas fa-trash-alt"></i></button></td>`;
-                activitiesTableBody.appendChild(row);
-                row.querySelector('.remove-btn').addEventListener('click', () => { row.remove(); updatePrecedenceDropdowns(); });
-                row.querySelector('.edit-res-btn').addEventListener('click', () => openResourceModal(row));
-            }
-            
-            function updatePrecedenceDropdowns() {
-                const options = Array.from(activitiesTableBody.querySelectorAll('tr')).map(row => {
-                    const projInput = row.querySelector('.act-proj');
-                    const actInput = row.querySelector('.act-name');
-                    if (!projInput || !actInput) return null;
-                    const proj = projInput.value;
-                    const act = actInput.value;
-                    if (!proj || !act) return null;
-                    const val = `${act},${proj}`;
-                    const text = `${act} (${proj})`;
-                    return `<option value="${val}">${text}</option>`;
-                }).filter(Boolean).join('');
-                predecessorSelect.innerHTML = options;
-                successorSelect.innerHTML = options;
-            }
-
-            function addPrecedenceRow(predVal, succVal) {
-                const existing = Array.from(precedencesTableBody.querySelectorAll('tr')).some(r => r.dataset.pred === predVal && r.dataset.succ === succVal);
-                if (existing) return;
-                const predOption = predecessorSelect.querySelector(`[value="${predVal}"]`);
-                const succOption = successorSelect.querySelector(`[value="${succVal}"]`);
-                if (!predOption || !succOption) return;
-                const predText = predOption.textContent;
-                const succText = succOption.textContent;
-                const row = document.createElement('tr');
-                row.dataset.pred = predVal;
-                row.dataset.succ = succVal;
-                row.innerHTML = `<td>${predText}</td><td>${succText}</td><td><button class="text-red-500 hover:text-red-700 remove-btn"><i class="fas fa-trash-alt"></i></button></td>`;
-                precedencesTableBody.appendChild(row);
-                row.querySelector('.remove-btn').addEventListener('click', () => row.remove());
-            }
-
-            addPrecedenceBtn.addEventListener('click', () => {
-                const pred = predecessorSelect.value;
-                const succ = successorSelect.value;
-                if (pred && succ && pred !== succ) { addPrecedenceRow(pred, succ); } 
-                else if (pred === succ) { alert('An activity cannot be its own predecessor.'); }
-            });
-
+            // Event Listeners for adding data
+            addPrecedenceBtn.addEventListener('click', () => { const pred = predecessorSelect.value; const succ = successorSelect.value; if (pred && succ && pred !== succ) { addPrecedenceRow(pred, succ); } else if (pred === succ) { showError('An activity cannot be its own predecessor.'); } });
             document.getElementById('add-activity-btn').addEventListener('click', () => { addActivityRow(); updatePrecedenceDropdowns(); });
             document.getElementById('add-resource-btn').addEventListener('click', () => addResourceRow());
-            populateForms(sample_data);
 
+            // --- NEW: Excel Import Logic with Drag & Drop ---
+            async function handleFileUpload(file) {
+                if (!file) return;
+                const formData = new FormData();
+                formData.append('file', file);
+                loadingOverlay.classList.remove('hidden');
+                loadingText.textContent = 'Importing data from Excel...';
+                try {
+                    const response = await fetch(`${API_BASE_URL}/api/import_excel`, { method: 'POST', body: formData });
+                    if (!response.ok) {
+                        const errData = await response.json().catch(() => ({ error: `HTTP error! Status: ${response.status}` }));
+                        throw new Error(errData.error || `HTTP error! Status: ${response.status}`);
+                    }
+                    const data = await response.json();
+                    populateForms(data);
+                } catch (error) {
+                    showError(`Error importing file: ${error.message}`);
+                } finally {
+                    loadingOverlay.classList.add('hidden');
+                    excelFileInput.value = ''; // Reset file input
+                }
+            }
+            dropZone.addEventListener('click', () => excelFileInput.click());
+            excelFileInput.addEventListener('change', (event) => { handleFileUpload(event.target.files[0]); });
+            dropZone.addEventListener('dragover', (event) => { event.preventDefault(); dropZone.classList.add('drag-over'); });
+            dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('drag-over'); });
+            dropZone.addEventListener('drop', (event) => { event.preventDefault(); dropZone.classList.remove('drag-over'); handleFileUpload(event.dataTransfer.files[0]); });
+            // --- END: Excel Import Logic ---
+
+            // Resource Requirements Modal Logic
             function openResourceModal(row) { currentEditingRow = row; const proj = row.querySelector('.act-proj').value; const act = row.querySelector('.act-name').value; modalTitle.textContent = `Resource Requirements for "${act}" (${proj})`; const currentReqs = JSON.parse(row.dataset.resourceReqs || '{}'); const allResources = Array.from(resourcesTableBody.querySelectorAll('.res-name')).map(input => input.value).filter(Boolean); modalBody.innerHTML = ''; if (allResources.length === 0) { modalBody.innerHTML = '<p class="text-gray-500">Please add at least one resource in the "Resources" tab first.</p>'; } else { allResources.forEach(resName => { const value = currentReqs[resName] || 0; const div = document.createElement('div'); div.className = 'flex items-center justify-between'; div.innerHTML = `<label for="res-${resName}" class="font-medium">${resName}</label><input type="number" id="res-${resName}" value="${value}" min="0" class="modal-res-input w-24" data-res-name="${resName}">`; modalBody.appendChild(div); }); } resourceModal.classList.remove('hidden'); }
             function closeResourceModal() { resourceModal.classList.add('hidden'); currentEditingRow = null; }
             function saveResourceReqs() { if (!currentEditingRow) return; const newReqs = {}; modalBody.querySelectorAll('.modal-res-input').forEach(input => { newReqs[input.dataset.resName] = parseInt(input.value) || 0; }); currentEditingRow.dataset.resourceReqs = JSON.stringify(newReqs); closeResourceModal(); }
             modalCancelBtn.addEventListener('click', closeResourceModal);
             modalSaveBtn.addEventListener('click', saveResourceReqs);
 
-            const tabs = document.querySelectorAll('.tab-button');
-            const tabContents = document.querySelectorAll('.tab-content');
-            tabs.forEach(tab => { tab.addEventListener('click', () => { tabs.forEach(item => item.classList.remove('active')); tab.classList.add('active'); const target = document.getElementById(tab.dataset.tab); tabContents.forEach(content => content.classList.remove('active')); target.classList.add('active'); }); });
+            // Tab Navigation
+            const tabs = document.querySelectorAll('.tab-button'); const tabContents = document.querySelectorAll('.tab-content'); tabs.forEach(tab => { tab.addEventListener('click', () => { tabs.forEach(item => item.classList.remove('active')); tab.classList.add('active'); const target = document.getElementById(tab.dataset.tab); tabContents.forEach(content => content.classList.remove('active')); target.classList.add('active'); }); });
             
+            // Collect Data for Optimization
             function collectDataFromForms() {
                 const data = { projects: [], activities: {}, resources: [], precedences: {}, resource_requirements: {}, resource_weights: {}, earliest_start_times: {}, project_deadlines: {}, max_resource_capacity: {}, target_finish_times: {}, lateness_penalties: {}, min_durations: {}, max_durations: {} };
                 data.time_periods = parseInt(document.getElementById('time_periods').value);
                 data.cost_per_day = parseFloat(document.getElementById('cost_per_day').value);
                 resourcesTableBody.querySelectorAll('tr').forEach(row => { const name = row.querySelector('.res-name').value; if (!name) return; data.resources.push(name); data.max_resource_capacity[name] = parseInt(row.querySelector('.res-capacity').value); data.resource_weights[name] = parseFloat(row.querySelector('.res-weight').value); });
                 const projectSet = new Set();
-                activitiesTableBody.querySelectorAll('tr').forEach(row => {
-                    const proj = row.querySelector('.act-proj').value; const act = row.querySelector('.act-name').value; if (!proj || !act) return;
-                    const key = `${act},${proj}`;
-                    if (!data.activities[proj]) data.activities[proj] = [];
-                    data.activities[proj].push(act);
-                    projectSet.add(proj);
-                    data.min_durations[key] = parseInt(row.querySelector('.act-min-dur').value);
-                    data.max_durations[key] = parseInt(row.querySelector('.act-max-dur').value);
-                    data.target_finish_times[key] = parseInt(row.querySelector('.act-target-finish').value);
-                    data.lateness_penalties[key] = parseInt(row.querySelector('.act-penalty').value);
-                    const reqs = JSON.parse(row.dataset.resourceReqs || '{}');
-                    for (const resName in reqs) { data.resource_requirements[`${key},${resName}`] = reqs[resName]; }
-                });
+                activitiesTableBody.querySelectorAll('tr').forEach(row => { const proj = row.querySelector('.act-proj').value; const act = row.querySelector('.act-name').value; if (!proj || !act) return; const key = `${act},${proj}`; if (!data.activities[proj]) data.activities[proj] = []; data.activities[proj].push(act); projectSet.add(proj); data.min_durations[key] = parseInt(row.querySelector('.act-min-dur').value); data.max_durations[key] = parseInt(row.querySelector('.act-max-dur').value); data.target_finish_times[key] = parseInt(row.querySelector('.act-target-finish').value); data.lateness_penalties[key] = parseInt(row.querySelector('.act-penalty').value); const reqs = JSON.parse(row.dataset.resourceReqs || '{}'); for (const resName in reqs) { data.resource_requirements[`${key},${resName}`] = reqs[resName]; } });
                 data.projects = Array.from(projectSet);
-                data.projects.forEach(proj => {
-                    data.earliest_start_times[proj] = 1;
-                    data.project_deadlines[proj] = data.time_periods * 2;
-                });
+                data.projects.forEach(proj => { data.earliest_start_times[proj] = 1; data.project_deadlines[proj] = data.time_periods * 2; });
                 data.precedences = {};
-                precedencesTableBody.querySelectorAll('tr').forEach(row => {
-                    const [predAct, predProj] = row.dataset.pred.split(',');
-                    const [succAct, succProj] = row.dataset.succ.split(',');
-                    if (predProj !== succProj) return; 
-                    if (!data.precedences[predProj]) data.precedences[predProj] = [];
-                    data.precedences[predProj].push([predAct, succAct]);
-                });
+                precedencesTableBody.querySelectorAll('tr').forEach(row => { const [predAct, predProj] = row.dataset.pred.split(','); const [succAct, succProj] = row.dataset.succ.split(','); if (predProj !== succProj) return; if (!data.precedences[predProj]) data.precedences[predProj] = []; data.precedences[predProj].push([predAct, succAct]); });
                 return data;
             }
 
-            optimizeButton.addEventListener('click', async () => { const jsonData = collectDataFromForms(); initialMessage.classList.add('hidden'); summaryTablesContainer.innerHTML = ''; ganttContainer.classList.add('hidden'); resourceContainer.classList.add('hidden'); rawJsonDetails.classList.add('hidden'); loadingOverlay.classList.remove('hidden'); optimizeButton.disabled = true; optimizeButton.classList.add('opacity-50', 'cursor-not-allowed'); try { const response = await fetch(`${API_BASE_URL}/api/optimize`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(jsonData) }); if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`); const data = await response.json(); checkTaskStatus(data.task_id); } catch (error) { showError(`Could not start optimization: ${error.message}`); } });
-            async function checkTaskStatus(taskId) { const statusUrl = `${API_BASE_URL}/api/status/${taskId}`; const intervalId = setInterval(async () => { try { const response = await fetch(statusUrl); if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`); const data = await response.json(); const state = data.state || data.status; loadingText.textContent = `Optimization in progress... Status: ${state}`; if (state === 'SUCCESS') { clearInterval(intervalId); showSuccess(data.result); } else if (state === 'FAILURE') { clearInterval(intervalId); showError(`Task failed: ${data.result || 'Unknown error. Check worker logs.'}`); } } catch (error) { clearInterval(intervalId); showError(`Could not get task status: ${error.message}`); } }, 2000); }
-            function showSuccess(result) { loadingOverlay.classList.add('hidden'); outputEl.textContent = JSON.stringify(result, null, 4); renderResults(result); resetButton(); }
-            function showError(message) { loadingOverlay.classList.add('hidden'); initialMessage.textContent = message; initialMessage.classList.remove('hidden', 'text-gray-500'); initialMessage.classList.add('text-red-600'); resetButton(); }
-            function resetButton() { optimizeButton.disabled = false; optimizeButton.classList.remove('opacity-50', 'cursor-not-allowed'); }
-            function renderResults(result) { if(!result || result.status !== 'Optimal') { showError("Optimization failed or a feasible solution was not found."); return; } ganttContainer.classList.remove('hidden'); resourceContainer.classList.remove('hidden'); rawJsonDetails.classList.remove('hidden'); renderSummaryTables(result); renderGanttChart(result); renderResourceChart(result); }
-            function renderSummaryTables(result) { summaryTablesContainer.innerHTML = ''; const objectiveCard = `<div class="bg-blue-100 p-4 rounded-lg"><h4 class="font-bold text-blue-800">Objective Function Value</h4><p class="text-2xl font-light text-blue-900">${result.objective_value.toFixed(2)}</p></div>`; let peakUsageHtml = '<div class="bg-indigo-100 p-4 rounded-lg"><h4 class="font-bold text-indigo-800">Peak Resource Usage</h4><div class="space-y-1 mt-1">'; for(const [resource, value] of Object.entries(result.peak_resource_usage)) { peakUsageHtml += `<p class="text-indigo-900"><span class="font-semibold">${resource}:</span> ${value.toFixed(1)} units</p>`; } peakUsageHtml += '</div></div>'; summaryTablesContainer.innerHTML = objectiveCard + peakUsageHtml; }
+            // Optimization Process
+            optimizeButton.addEventListener('click', async () => { const jsonData = collectDataFromForms(); clearResults(); loadingOverlay.classList.remove('hidden'); loadingText.textContent = `Optimization in progress, please wait...`; optimizeButton.disabled = true; optimizeButton.classList.add('opacity-50', 'cursor-not-allowed'); try { const response = await fetch(`${API_BASE_URL}/api/optimize`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(jsonData) }); if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`); const data = await response.json(); checkTaskStatus(data.task_id); } catch (error) { showError(`Could not start optimization: ${error.message}`); } });
+            async function checkTaskStatus(taskId) { const statusUrl = `${API_BASE_URL}/api/status/${taskId}`; const intervalId = setInterval(async () => { try { const response = await fetch(statusUrl); if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`); const data = await response.json(); const state = data.status; loadingText.textContent = `Optimization in progress... Status: ${state}`; if (state === 'SUCCESS') { clearInterval(intervalId); showSuccess(data.result); } else if (state === 'FAILURE') { clearInterval(intervalId); showError(`Task failed: ${data.result || 'Unknown error. Check worker logs.'}`); } } catch (error) { clearInterval(intervalId); showError(`Could not get task status: ${error.message}`); } }, 2000); }
             
-            function renderGanttChart(result) {
-                const planningHorizon = parseInt(document.getElementById('time_periods').value);
-                const today = new Date();
-                const addDays = (days) => dateFns.addDays(today, days);
-                
-                const tasks = result.schedule;
-                const taskLabels = tasks.map(task => `${task.activity} (${task.project})`);
-                const taskData = tasks.map(task => ({
-                    x: [addDays(task.start - 1), addDays(task.finish)],
-                    y: `${task.activity} (${task.project})`
-                }));
+            // Result Handling
+            function clearResults() { initialMessage.classList.add('hidden'); summaryTablesContainer.innerHTML = ''; ganttContainer.classList.add('hidden'); resourceContainer.classList.add('hidden'); rawJsonDetails.classList.add('hidden'); initialMessage.classList.remove('text-red-600', 'bg-red-100', 'p-4', 'rounded-lg', 'font-semibold'); initialMessage.classList.add('text-gray-500'); initialMessage.textContent = 'No optimization has been started yet. The results will be displayed here.'; }
+            function showSuccess(result) { loadingOverlay.classList.add('hidden'); outputEl.textContent = JSON.stringify(result, null, 4); renderResults(result); resetButton(); }
+            function showError(message) { loadingOverlay.classList.add('hidden'); clearResults(); initialMessage.textContent = message; initialMessage.classList.remove('hidden', 'text-gray-500'); initialMessage.classList.add('text-red-600', 'bg-red-100', 'p-4', 'rounded-lg', 'font-semibold'); resetButton(); }
+            function resetButton() { optimizeButton.disabled = false; optimizeButton.classList.remove('opacity-50', 'cursor-not-allowed'); }
+            function renderResults(result) { if(!result || result.status !== 'Optimal') { showError(result.error || "Optimization failed or a feasible solution was not found."); return; } clearResults(); initialMessage.classList.add('hidden'); ganttContainer.classList.remove('hidden'); resourceContainer.classList.remove('hidden'); rawJsonDetails.classList.remove('hidden'); renderSummaryTables(result); renderGanttChart(result); renderResourceChart(result); }
+            function renderSummaryTables(result) { const objectiveCard = `<div class="bg-blue-100 p-4 rounded-lg"><h4 class="font-bold text-blue-800">Objective Function Value</h4><p class="text-2xl font-light text-blue-900">${result.objective_value.toFixed(2)}</p></div>`; let peakUsageHtml = '<div class="bg-indigo-100 p-4 rounded-lg"><h4 class="font-bold text-indigo-800">Peak Resource Usage</h4><div class="space-y-1 mt-1">'; for(const [resource, value] of Object.entries(result.peak_resource_usage)) { peakUsageHtml += `<p class="text-indigo-900"><span class="font-semibold">${resource}:</span> ${value.toFixed(1)} units</p>`; } peakUsageHtml += '</div></div>'; summaryTablesContainer.innerHTML = objectiveCard + peakUsageHtml; }
+            
+            // Chart Rendering
+            function renderGanttChart(result) { const planningHorizon = parseInt(document.getElementById('time_periods').value); const today = new Date(); const addDays = (days) => dateFns.addDays(today, days); const tasks = result.schedule; const taskLabels = tasks.map(task => `${task.activity} (${task.project})`); const taskData = tasks.map(task => ({ x: [addDays(task.start - 1), addDays(task.finish)], y: `${task.activity} (${task.project})` })); const ctx = document.getElementById('gantt-chart').getContext('2d'); if (ganttChartInstance) ganttChartInstance.destroy(); ganttChartInstance = new Chart(ctx, { type: 'bar', data: { labels: taskLabels.slice().reverse(), datasets: [{ data: taskData.slice().reverse(), backgroundColor: 'rgba(59, 130, 246, 0.6)', borderColor: 'rgba(59, 130, 246, 1)', borderWidth: 1, barPercentage: 0.6, categoryPercentage: 0.7, borderSkipped: false }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, scales: { x: { type: 'time', time: { unit: 'day', displayFormats: { day: 'd MMM' } }, min: addDays(0), max: addDays(planningHorizon), title: { display: true, text: 'Date' } }, y: { title: { display: true, text: 'Activities' } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (context) => { const start = new Date(context.raw.x[0]).toLocaleDateString(); const end = new Date(context.raw.x[1]).toLocaleDateString(); return `${context.label}: ${start} - ${end}`; } } } } } }); }
+            function renderResourceChart(result) { const planningHorizon = parseInt(document.getElementById('time_periods').value); const dailyUsage = result.daily_usage; const resources = Object.keys(result.peak_resource_usage); const labels = Array.from({ length: planningHorizon }, (_, i) => `Day ${i + 1}`); const datasets = resources.map((resource, index) => { const data = labels.map(label => { const day = label.replace('Day ', ''); return dailyUsage[day]?.[resource] || 0; }); const colors = [ { bg: 'rgba(59, 130, 246, 0.2)', border: 'rgba(59, 130, 246, 1)' }, { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 1)' }, { bg: 'rgba(16, 185, 129, 0.2)', border: 'rgba(16, 185, 129, 1)' } ]; const color = colors[index % colors.length]; return { label: resource, data: data, borderColor: color.border, backgroundColor: color.bg, fill: true, tension: 0.1 }; }); const ctx = document.getElementById('resource-chart').getContext('2d'); if (resourceChartInstance) resourceChartInstance.destroy(); resourceChartInstance = new Chart(ctx, { type: 'line', data: { labels: labels, datasets: datasets }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, title: { display: true, text: 'Units Used' } }, x: { title: { display: true, text: 'Time' } } }, plugins: { legend: { position: 'top' } } } }); }
 
-                const ctx = document.getElementById('gantt-chart').getContext('2d');
-                if (ganttChartInstance) ganttChartInstance.destroy();
-                
-                ganttChartInstance = new Chart(ctx, {
-                    type: 'bar',
-                    data: {
-                        labels: taskLabels.slice().reverse(),
-                        datasets: [{ data: taskData.slice().reverse(), backgroundColor: 'rgba(59, 130, 246, 0.6)', borderColor: 'rgba(59, 130, 246, 1)', borderWidth: 1, barPercentage: 0.6, categoryPercentage: 0.7, borderSkipped: false }]
-                    },
-                    options: {
-                        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-                        scales: {
-                            x: { 
-                                type: 'time', 
-                                time: { unit: 'day', displayFormats: { day: 'd MMM' } }, 
-                                min: addDays(0), 
-                                max: addDays(planningHorizon), // UPDATED: Set max boundary of the chart
-                                title: { display: true, text: 'Date' } 
-                            },
-                            y: { title: { display: true, text: 'Activities' } }
-                        },
-                        plugins: {
-                            legend: { display: false },
-                            tooltip: { callbacks: { label: (context) => { const start = new Date(context.raw.x[0]).toLocaleDateString('en-US'); const end = new Date(context.raw.x[1]).toLocaleDateString('en-US'); return `${context.label}: ${start} - ${end}`; } } }
-                        }
-                    }
-                });
-            }
-
-            function renderResourceChart(result) {
-                const planningHorizon = parseInt(document.getElementById('time_periods').value);
-                const dailyUsage = result.daily_usage;
-                const resources = Object.keys(result.peak_resource_usage);
-
-                // UPDATED: Generate labels for the entire planning horizon
-                const labels = Array.from({ length: planningHorizon }, (_, i) => `Day ${i + 1}`);
-
-                const datasets = resources.map((resource, index) => {
-                    // UPDATED: Map data against the full set of labels, using 0 for days with no usage data
-                    const data = labels.map(label => {
-                        const day = label.replace('Day ', '');
-                        return dailyUsage[day]?.[resource] || 0;
-                    });
-                    const colors = [ { bg: 'rgba(59, 130, 246, 0.2)', border: 'rgba(59, 130, 246, 1)' }, { bg: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 1)' }, { bg: 'rgba(16, 185, 129, 0.2)', border: 'rgba(16, 185, 129, 1)' } ];
-                    const color = colors[index % colors.length];
-                    return { label: resource, data: data, borderColor: color.border, backgroundColor: color.bg, fill: true, tension: 0.1 };
-                });
-                const ctx = document.getElementById('resource-chart').getContext('2d');
-                if (resourceChartInstance) resourceChartInstance.destroy();
-                resourceChartInstance = new Chart(ctx, {
-                    type: 'line',
-                    data: { labels: labels, datasets: datasets },
-                    options: {
-                        responsive: true, maintainAspectRatio: false,
-                        scales: {
-                            y: { beginAtZero: true, title: { display: true, text: 'Units Used' } },
-                            x: { title: { display: true, text: 'Time' } }
-                        },
-                        plugins: { legend: { position: 'top' } }
-                    }
-                });
-            }
+            // Initial population of forms
+            populateForms(sample_data);
         });
     </script>
 </body>
 </html>
+
